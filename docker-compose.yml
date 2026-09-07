@@ -3,7 +3,7 @@ name: user-platform
 services:
   postgres:
     build: ./postgres
-    image: postgresql-user:local
+    image: ahceneaiti/postgresql-user:latest
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
@@ -20,7 +20,7 @@ services:
 
   kafka:
     build: ./kafka
-    image: kafka-user:local
+    image: ahceneaiti/kafka-user:latest
     ports:
       - "9092:9092"
     volumes:
@@ -46,7 +46,7 @@ services:
 
   user-service:
     build: ./user-service
-    image: php-api-user:local
+    image: ahceneaiti/php-api-user:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,7 +72,7 @@ services:
 
   notification-service:
     build: ./notification-service
-    image: notification-service:local
+    image: ahceneaiti/notification-service:latest
     depends_on:
       kafka:
         condition: service_started
@@ -91,7 +91,7 @@ services:
 
   audit-service:
     build: ./audit-service
-    image: audit-service:local
+    image: ahceneaiti/audit-service:latest
     depends_on:
       kafka:
         condition: service_started

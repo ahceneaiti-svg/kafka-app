@@ -30,8 +30,8 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgresql-user:local
-          imagePullPolicy: IfNotPresent
+          image: ahceneaiti/postgresql-user:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 5432
           env:

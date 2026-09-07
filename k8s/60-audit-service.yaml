@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: audit-service
-          image: audit-service:local
-          imagePullPolicy: IfNotPresent
+          image: ahceneaiti/audit-service:latest
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: app-config

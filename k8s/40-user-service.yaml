@@ -17,8 +17,8 @@ spec:
     spec:
       initContainers:
         - name: migrate
-          image: php-api-user:local
-          imagePullPolicy: IfNotPresent
+          image: ahceneaiti/php-api-user:latest
+          imagePullPolicy: Always
           command:
             - php
             - bin/console
@@ -32,8 +32,8 @@ spec:
                 name: app-secrets
       containers:
         - name: user-service
-          image: php-api-user:local
-          imagePullPolicy: IfNotPresent
+          image: ahceneaiti/php-api-user:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           envFrom:

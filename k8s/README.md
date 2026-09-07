@@ -1,92 +1,155 @@
-# Déploiement Kubernetes (kind)
+# Déploiement Kubernetes (kind) — pas à pas
 
 Manifestes `kustomize` pour faire tourner toute la plateforme sur un cluster
-Kubernetes local [kind](https://kind.sigs.k8s.io/).
+Kubernetes local [kind](https://kind.sigs.k8s.io/), **sans build local** :
+toutes les images sont tirées depuis Docker Hub.
 
 ## Sommaire
 
 1. [Prérequis](#prérequis)
-2. [Contenu des manifestes](#contenu-des-manifestes)
-3. [Déploiement](#déploiement)
-4. [Vérification](#vérification)
-5. [Accès aux services](#accès-aux-services)
-6. [Base de données PostgreSQL](#base-de-données-postgresql)
-7. [Kafka](#kafka)
-8. [Exemples de publication de message](#exemples-de-publication-de-message)
-9. [Migrations Doctrine](#migrations-doctrine)
-10. [Mise à jour / redéploiement](#mise-à-jour--redéploiement)
-11. [Nettoyage](#nettoyage)
-12. [Dépannage](#dépannage)
+2. [Images utilisées](#images-utilisées)
+3. [Contenu des manifestes](#contenu-des-manifestes)
+4. [Déploiement pas à pas](#déploiement-pas-à-pas)
+5. [Vérification](#vérification)
+6. [Accès aux services](#accès-aux-services)
+7. [Base de données PostgreSQL](#base-de-données-postgresql)
+8. [Kafka](#kafka)
+9. [Exemples de publication de message](#exemples-de-publication-de-message)
+10. [Migrations Doctrine](#migrations-doctrine)
+11. [Mise à jour / redéploiement](#mise-à-jour--redéploiement)
+12. [Nettoyage](#nettoyage)
+13. [Dépannage](#dépannage)
 
 ---
 
 ## Prérequis
 
-| Outil     | Rôle                              |
-|-----------|-----------------------------------|
-| `docker`  | build des images + runtime kind   |
-| `kind`    | cluster Kubernetes local          |
-| `kubectl` | pilotage du cluster               |
+| Outil     | Rôle                                    |
+|-----------|-----------------------------------------|
+| `docker`  | runtime du nœud kind                    |
+| `kind`    | cluster Kubernetes local                |
+| `kubectl` | pilotage du cluster                     |
 
-Les images applicatives (`php-api-user`, `notification-service`, `audit-service`)
-sont **construites en local** et injectées dans le cluster avec `kind load`
-(`imagePullPolicy: IfNotPresent`, aucun registry requis).
+Aucun build d'image n'est nécessaire : le cluster télécharge les images
+publiques depuis Docker Hub.
+
+---
+
+## Images utilisées
+
+| Composant              | Image                                   |
+|------------------------|-----------------------------------------|
+| user-service (API)     | `ahceneaiti/php-api-user:latest`        |
+| PostgreSQL             | `ahceneaiti/postgresql-user:latest`     |
+| Kafka                  | `ahceneaiti/kafka-user:latest`          |
+| notification-service   | `ahceneaiti/notification-service:latest`|
+| audit-service          | `ahceneaiti/audit-service:latest`       |
+| Kafka UI               | `kafbat/kafka-ui:latest`                |
+| MailHog                | `mailhog/mailhog:v1.0.1`                |
+
+Toutes les images applicatives sont en `imagePullPolicy: Always` (tag `latest`) :
+un `rollout restart` retélécharge la dernière version.
 
 ---
 
 ## Contenu des manifestes
 
-| Fichier                     | Objets                                                              |
-|-----------------------------|-------------------------------------------------------------------|
-| `00-namespace.yaml`         | Namespace `user-platform`                                        |
-| `05-config.yaml`            | `ConfigMap` app-config + `Secret` app-secrets                    |
-| `10-postgres.yaml`          | Deployment + Service + `PersistentVolumeClaim` (1Gi)             |
-| `20-kafka.yaml`             | Deployment + Service (Apache Kafka 3.8, KRaft, `emptyDir`)       |
-| `25-kafka-ui.yaml`          | Deployment + Service `NodePort` 30808 (UI web)                   |
-| `30-mailhog.yaml`           | Deployment + Service SMTP + Service `NodePort` 30825 (UI)        |
-| `40-user-service.yaml`      | Deployment (+ `initContainer` migrations) + Service `NodePort` 30080 |
-| `50-notification-service.yaml` | Deployment (consumer, groupe `notification-service`)          |
-| `60-audit-service.yaml`     | Deployment (consumer, groupe `audit-service`)                    |
-| `kustomization.yaml`        | agrège les manifestes ci-dessus                                  |
+| Fichier                        | Objets                                                              |
+|--------------------------------|-------------------------------------------------------------------|
+| `00-namespace.yaml`            | Namespace `user-platform`                                        |
+| `05-config.yaml`               | `ConfigMap` app-config + `Secret` app-secrets                    |
+| `10-postgres.yaml`             | Deployment + Service + `PersistentVolumeClaim` (1Gi)             |
+| `20-kafka.yaml`                | Deployment + Service (Apache Kafka 3.8, KRaft, `emptyDir`)       |
+| `25-kafka-ui.yaml`             | Deployment + Service `NodePort` 30808 (UI web)                   |
+| `30-mailhog.yaml`              | Deployment + Service SMTP + Service `NodePort` 30825 (UI)        |
+| `40-user-service.yaml`         | Deployment (+ `initContainer` migrations) + Service `NodePort` 30080 |
+| `50-notification-service.yaml` | Deployment (consumer, groupe `notification-service`)             |
+| `60-audit-service.yaml`        | Deployment (consumer, groupe `audit-service`)                    |
+| `kustomization.yaml`           | agrège les manifestes ci-dessus                                  |
 
 Tout est déployé dans le namespace **`user-platform`**.
 
 ---
 
-## Déploiement
+## Déploiement pas à pas
 
-### Option 1 — Makefile (depuis la racine du dépôt)
+### Étape 1 — Créer le cluster kind
 
-```bash
-make kind-up     # crée le cluster "user-platform" (mappe 8080, 8090, 8025 vers l'hôte)
-make deploy      # build images -> kind load -> kubectl apply -k k8s -> attend le rollout
-make k8s-status  # kubectl -n user-platform get pods,svc
-```
-
-### Option 2 — étapes manuelles
+Depuis la racine du dépôt (le fichier `kind-config.yaml` y est) :
 
 ```bash
-# 1. cluster
 kind create cluster --config kind-config.yaml
-
-# 2. build des 3 images applicatives
-docker build -t php-api-user:local        ./user-service
-docker build -t notification-service:local ./notification-service
-docker build -t audit-service:local       ./audit-service
-
-# 3. injection dans le cluster kind
-kind load docker-image php-api-user:local notification-service:local audit-service:local \
-  --name user-platform
-
-# 4. application des manifestes
-kubectl apply -k k8s
-
-# 5. attente
-kubectl -n user-platform rollout status deploy/user-service --timeout=240s
 ```
 
-> Les images `postgres:16-alpine`, `apache/kafka:3.8.0`, `kafbat/kafka-ui`,
-> `mailhog/mailhog` sont tirées depuis Docker Hub par le cluster.
+`kind-config.yaml` mappe trois `NodePort` vers l'hôte :
+
+| Conteneur (NodePort) | Hôte             |
+|----------------------|------------------|
+| `30080`              | `localhost:8080` (API) |
+| `30808`              | `localhost:8090` (Kafka UI) |
+| `30825`              | `localhost:8025` (MailHog) |
+
+Vérifier le contexte kubectl :
+
+```bash
+kubectl config current-context      # -> kind-user-platform
+kubectl get nodes                   # -> user-platform-control-plane  Ready
+```
+
+### Étape 2 — Appliquer les manifestes
+
+```bash
+kubectl apply -k k8s
+```
+
+Sortie attendue :
+
+```
+namespace/user-platform created
+configmap/app-config created
+secret/app-secrets created
+service/kafka created
+service/kafka-ui created
+service/mailhog created
+service/mailhog-ui created
+service/postgres created
+service/user-service created
+persistentvolumeclaim/postgres-data created
+deployment.apps/audit-service created
+deployment.apps/kafka created
+deployment.apps/kafka-ui created
+deployment.apps/mailhog created
+deployment.apps/notification-service created
+deployment.apps/postgres created
+deployment.apps/user-service created
+```
+
+### Étape 3 — Attendre que tout soit prêt
+
+```bash
+kubectl -n user-platform wait --for=condition=available --timeout=300s deployment --all
+```
+
+Ou suivre un par un :
+
+```bash
+kubectl -n user-platform rollout status deploy/postgres
+kubectl -n user-platform rollout status deploy/kafka
+kubectl -n user-platform rollout status deploy/user-service      # migrations dans l'initContainer
+kubectl -n user-platform rollout status deploy/notification-service
+kubectl -n user-platform rollout status deploy/audit-service
+kubectl -n user-platform rollout status deploy/kafka-ui
+```
+
+Ordre de démarrage : `postgres` + `kafka` d'abord ; `user-service` attend Postgres
+(l'`initContainer` `migrate` échoue et est relancé tant que la base n'est pas prête) ;
+les consumers réessaient la connexion Kafka en boucle jusqu'à ce que le broker réponde.
+
+### Étape 4 — Sonde de santé
+
+```bash
+curl -s http://localhost:8080/health      # {"status":"ok"}
+```
 
 ---
 
@@ -109,27 +172,19 @@ kubectl -n user-platform logs -l app=notification-service -f
 kubectl -n user-platform logs -l app=audit-service -f
 ```
 
-Sonde de santé de l'API :
-
-```bash
-curl -s http://localhost:8080/health      # {"status":"ok"}
-```
-
 ---
 
 ## Accès aux services
 
-Le fichier `kind-config.yaml` mappe les `NodePort` vers `localhost` :
+| Service            | URL / accès hôte                    | NodePort | Service interne          |
+|--------------------|-------------------------------------|----------|--------------------------|
+| user-service (API) | http://localhost:8080               | 30080    | `user-service:80` → 8000 |
+| Kafka UI           | http://localhost:8090               | 30808    | `kafka-ui:8080`          |
+| MailHog UI         | http://localhost:8025               | 30825    | `mailhog-ui:8025`        |
+| PostgreSQL         | *(pas de NodePort)* → port-forward  | —        | `postgres:5432`          |
+| Kafka              | *(pas de NodePort)* → port-forward  | —        | `kafka:9092`             |
 
-| Service    | URL / accès hôte                | NodePort | Service ClusterIP interne |
-|------------|---------------------------------|----------|---------------------------|
-| user-service (API) | http://localhost:8080   | 30080    | `user-service:80` → 8000  |
-| Kafka UI   | http://localhost:8090           | 30808    | `kafka-ui:8080`           |
-| MailHog UI | http://localhost:8025           | 30825    | `mailhog-ui:8025`         |
-| PostgreSQL | *(pas de NodePort)* → port-forward | —     | `postgres:5432`           |
-| Kafka      | *(pas de NodePort)* → port-forward | —     | `kafka:9092`              |
-
-### Si le cluster a été créé sans les mappings (ex. cluster préexistant)
+### Cluster créé sans les mappings de port (cluster préexistant)
 
 ```bash
 kubectl -n user-platform port-forward svc/user-service 8080:80
@@ -140,7 +195,8 @@ kubectl -n user-platform port-forward svc/mailhog-ui   8025:8025
 ### DNS interne au cluster
 
 Depuis un pod du namespace : `user-service`, `postgres:5432`, `kafka:9092`,
-`mailhog:1025`. Depuis un autre namespace : `<svc>.user-platform.svc.cluster.local`.
+`mailhog:1025`. Depuis un autre namespace :
+`<svc>.user-platform.svc.cluster.local`.
 
 ---
 
@@ -152,15 +208,19 @@ Identifiants (depuis `05-config.yaml`) : base `app`, user `app`, mot de passe `a
 
 ```bash
 kubectl -n user-platform exec -it deploy/postgres -- psql -U app -d app
-
-# exemples de requêtes
-\dt
-SELECT id, email, first_name, last_name, created_at FROM users ORDER BY created_at DESC;
-SELECT count(*) FROM users;
-SELECT version() FROM doctrine_migration_versions;   -- migrations appliquées
 ```
 
-Requête one-shot :
+```sql
+\dt
+SELECT id, email, first_name, last_name, created_at
+FROM users ORDER BY created_at DESC;
+
+SELECT count(*) FROM users;
+
+SELECT version FROM doctrine_migration_versions;   -- migrations appliquées
+```
+
+### Requête one-shot
 
 ```bash
 kubectl -n user-platform exec -it deploy/postgres -- \
@@ -171,17 +231,18 @@ kubectl -n user-platform exec -it deploy/postgres -- \
 
 ```bash
 kubectl -n user-platform port-forward svc/postgres 5432:5432
-# puis : psql "postgresql://app:app@localhost:5432/app"
+# puis :
+psql "postgresql://app:app@localhost:5432/app"
 ```
 
-### Inspecter la PVC
+### PVC
 
 ```bash
 kubectl -n user-platform get pvc postgres-data
 ```
 
-> ⚠️ Postgres utilise une PVC (données persistantes entre redéploiements).
-> Kafka utilise un `emptyDir` (les messages sont **perdus** si le pod kafka redémarre).
+> ⚠️ Postgres = PVC (données persistantes entre redéploiements).
+> Kafka = `emptyDir` : les messages sont **perdus** si le pod `kafka` redémarre.
 
 ---
 
@@ -204,7 +265,9 @@ Enveloppe d'un message :
 }
 ```
 
-La **clé** du message = id de l'utilisateur. Un **header** `eventType` est présent.
+**Clé** du message = id de l'utilisateur. **Header** `eventType` présent.
+
+Les scripts Kafka sont dans `/opt/kafka/bin/` du pod `kafka`.
 
 ### Lister les topics
 
@@ -228,7 +291,7 @@ kubectl -n user-platform exec -it deploy/kafka -- \
   /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
   --topic user-events --from-beginning \
   --property print.key=true --property print.headers=true
-# Ctrl-C pour quitter ; sans --from-beginning => uniquement les nouveaux messages
+# Ctrl-C pour quitter. Sans --from-beginning : uniquement les nouveaux messages.
 ```
 
 ### Offsets / lag des groupes consumers
@@ -237,13 +300,13 @@ kubectl -n user-platform exec -it deploy/kafka -- \
 kubectl -n user-platform exec deploy/kafka -- \
   /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
   --describe --all-groups
-# groupes attendus : notification-service, audit-service  (LAG 0 quand ils sont à jour)
+# groupes attendus : notification-service, audit-service  (LAG 0 = à jour)
 ```
 
 ### Via l'UI web
 
-http://localhost:8090 → cluster `user-platform` → *Topics* → `user-events` → *Messages*.
-*Consumers* pour les groupes et le lag.
+http://localhost:8090 → cluster `user-platform` → *Topics* → `user-events` →
+*Messages* ; *Consumers* pour les groupes et le lag.
 
 ---
 
@@ -268,17 +331,18 @@ kubectl -n user-platform logs -l app=audit-service        --tail=5   # "AUDIT {.
 curl -s http://localhost:8025/api/v2/messages | head -c 400          # MailHog
 ```
 
-### 2. Publication manuelle dans le topic (test consumers)
+### 2. Publication manuelle dans le topic (test des consumers)
 
 ```bash
-kubectl -n user-platform exec -it deploy/kafka -- sh -c '
-echo "305a2792-...:{\"eventType\":\"USER_CREATED\",\"occurredAt\":\"2026-09-07T10:00:00+00:00\",\"data\":{\"id\":\"305a2792-...\",\"email\":\"manual@example.com\",\"firstName\":\"Manual\",\"lastName\":\"Test\",\"createdAt\":\"2026-09-07T10:00:00+00:00\"}}" | \
-/opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
-  --topic user-events --property parse.key=true --property key.separator=:'
+kubectl -n user-platform exec -i deploy/kafka -- \
+  /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
+  --topic user-events --property parse.key=true --property key.separator='|' <<'EOF'
+11111111-1111-1111-1111-111111111111|{"eventType":"USER_CREATED","occurredAt":"2026-09-07T10:00:00+00:00","data":{"id":"11111111-1111-1111-1111-111111111111","email":"manual@example.com","firstName":"Manual","lastName":"Test","createdAt":"2026-09-07T10:00:00+00:00"}}
+EOF
 ```
 
-`notification-service` tentera d'envoyer un mail à `manual@example.com`,
-`audit-service` écrira une ligne d'audit.
+`notification-service` enverra un mail à `manual@example.com`,
+`audit-service` écrira une ligne d'audit — visible dans leurs logs.
 
 ### 3. Producer interactif
 
@@ -286,7 +350,7 @@ echo "305a2792-...:{\"eventType\":\"USER_CREATED\",\"occurredAt\":\"2026-09-07T1
 kubectl -n user-platform exec -it deploy/kafka -- \
   /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
   --topic user-events
-# taper une ligne JSON par message, Ctrl-D pour terminer
+# une ligne JSON par message, Ctrl-D pour terminer :
 > {"eventType":"USER_CREATED","occurredAt":"2026-09-07T10:05:00+00:00","data":{"id":"x","email":"iface@example.com","firstName":"I","lastName":"F","createdAt":"2026-09-07T10:05:00+00:00"}}
 ```
 
@@ -301,8 +365,11 @@ echo '{"eventType":"USER_CREATED","occurredAt":"2026-09-07T10:10:00+00:00","data
 
 ### 5. Depuis la Kafka UI
 
-http://localhost:8090 → *Topics* → `user-events` → **Produce Message** :
-renseigner *Key* (id) et *Value* (le JSON de l'enveloppe), puis *Produce*.
+http://localhost:8090 → *Topics* → `user-events` → bouton **Produce Message** :
+*Key* = id, *Value* = le JSON de l'enveloppe, puis *Produce*.
+
+> ℹ️ Seul `eventType == "USER_CREATED"` est traité par les consumers.
+> Un autre `eventType` est lu puis ignoré (l'offset avance quand même).
 
 ---
 
@@ -326,11 +393,10 @@ kubectl -n user-platform exec -it deploy/user-service -- \
 
 ## Mise à jour / redéploiement
 
-Après modification du code d'un service :
+Les images étant en `latest` + `imagePullPolicy: Always`, il suffit de
+redémarrer le Deployment pour récupérer une nouvelle version publiée :
 
 ```bash
-docker build -t php-api-user:local ./user-service
-kind load docker-image php-api-user:local --name user-platform
 kubectl -n user-platform rollout restart deploy/user-service
 kubectl -n user-platform rollout status  deploy/user-service
 ```
@@ -341,18 +407,19 @@ Après modification d'un manifeste :
 kubectl apply -k k8s
 ```
 
-(ou simplement `make deploy` qui refait build + load + apply.)
+Forcer le retéléchargement de toutes les images applicatives :
+
+```bash
+kubectl -n user-platform rollout restart deploy/user-service deploy/notification-service deploy/audit-service
+```
 
 ---
 
 ## Nettoyage
 
 ```bash
-kubectl delete -k k8s            # supprime le namespace et tout son contenu
-# ou : make undeploy
-
-kind delete cluster --name user-platform
-# ou : make kind-down
+kubectl delete -k k8s                        # supprime le namespace et tout son contenu
+kind delete cluster --name user-platform     # supprime le cluster
 ```
 
 ---
@@ -361,10 +428,11 @@ kind delete cluster --name user-platform
 
 | Symptôme                                              | Piste                                                                 |
 |------------------------------------------------------|----------------------------------------------------------------------|
-| Pod `user-service` en `Init:*`                       | `kubectl -n user-platform logs deploy/user-service -c migrate` (Postgres pas prêt ?) |
-| `ErrImageNeverPull` / `ImagePullBackOff` (image `:local`) | `kind load docker-image <img>:local --name user-platform` oublié     |
-| `http://localhost:8090` ne répond pas               | cluster créé avant l'ajout du mapping → `kubectl -n user-platform port-forward svc/kafka-ui 8090:8080` |
-| Consumers : `brokers are down` au démarrage         | normal quelques secondes le temps que le pod `kafka` soit prêt (retry auto) |
-| `Broker: Unknown topic or partition`                | le topic est créé à la 1ʳᵉ publication ; ignorer au démarrage        |
-| Lag qui ne descend pas                               | `kubectl -n user-platform logs deploy/notification-service` pour l'erreur du handler |
-| Pas de mail dans MailHog                             | vérifier `MAILER_DSN=smtp://mailhog:1025` dans le ConfigMap `app-config` |
+| Pod `user-service` bloqué en `Init:*` / `Init:CrashLoopBackOff` | `kubectl -n user-platform logs deploy/user-service -c migrate` — Postgres pas encore prêt (se résout seul) |
+| `ImagePullBackOff` / `ErrImagePull`                 | vérifier le nom d'image (`kubectl -n user-platform describe pod <pod>`), connectivité Docker Hub, quotas de pull |
+| `http://localhost:8090` ne répond pas              | cluster créé avant l'ajout du mapping → `kubectl -n user-platform port-forward svc/kafka-ui 8090:8080` |
+| Consumers : `brokers are down` au démarrage        | normal quelques secondes le temps que le pod `kafka` soit prêt (retry automatique) |
+| `Broker: Unknown topic or partition`               | le topic est créé à la 1ʳᵉ publication ; ignorer au démarrage        |
+| `curl localhost:8080` : `Connection refused`       | `kubectl -n user-platform get pod -l app=user-service` ; sinon `kubectl port-forward svc/user-service 8080:80` |
+| Lag qui ne descend pas                              | `kubectl -n user-platform logs deploy/notification-service` pour l'erreur du handler (message non commité, rejoué) |
+| Pas de mail dans MailHog                            | `MAILER_DSN=smtp://mailhog:1025` dans le ConfigMap `app-config` ?    |

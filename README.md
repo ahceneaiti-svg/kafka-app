@@ -21,15 +21,18 @@ tombe rejoue le message (commit manuel après traitement réussi).
 
 ## Composants
 
-| Élément                | Rôle                                             | Image                    |
-|------------------------|--------------------------------------------------|--------------------------|
-| `user-service`         | API REST Symfony 7.3, publie `USER_CREATED`      | `php-api-user`           |
-| `postgres`             | Stockage des utilisateurs                        | `postgresql-user`        |
-| `kafka`                | Bus d'évènements (KRaft, sans ZooKeeper)         | `kafka-user`             |
-| `notification-service` | Consommateur → mail de bienvenue                 | `notification-service`   |
-| `audit-service`        | Consommateur → journal d'audit                   | `audit-service`          |
-| `mailhog`              | SMTP de test + UI web                            | `mailhog/mailhog`        |
-| `kafka-ui`             | Interface web pour inspecter topics / messages   | `kafbat/kafka-ui`        |
+| Élément                | Rôle                                             | Image (Docker Hub)                       |
+|------------------------|--------------------------------------------------|-----------------------------------------|
+| `user-service`         | API REST Symfony 7.3, publie `USER_CREATED`      | `ahceneaiti/php-api-user:latest`        |
+| `postgres`             | Stockage des utilisateurs                        | `ahceneaiti/postgresql-user:latest`     |
+| `kafka`                | Bus d'évènements (KRaft, sans ZooKeeper)         | `ahceneaiti/kafka-user:latest`          |
+| `notification-service` | Consommateur → mail de bienvenue                 | `ahceneaiti/notification-service:latest`|
+| `audit-service`        | Consommateur → journal d'audit                   | `ahceneaiti/audit-service:latest`       |
+| `mailhog`              | SMTP de test + UI web                            | `mailhog/mailhog:v1.0.1`               |
+| `kafka-ui`             | Interface web pour inspecter topics / messages   | `kafbat/kafka-ui:latest`               |
+
+Les images applicatives sont publiées sur Docker Hub (`docker.io/ahceneaiti/*`).
+Chaque service garde son `Dockerfile` pour rebuild local si besoin.
 
 ## API
 
@@ -49,84 +52,60 @@ Corps de `POST /api/users` :
 
 ---
 
-## Option A — docker compose (le plus rapide)
+## Option A — docker compose
 
 ```bash
-make up            # build + démarre tout
+docker compose pull          # récupère les images ahceneaiti/* depuis Docker Hub
+docker compose up -d         # (ou : docker compose up --build -d  pour rebuild local)
+
 # API      : http://localhost:8080
 # Kafka UI : http://localhost:8090
 # MailHog  : http://localhost:8025
 
 curl -s -X POST http://localhost:8080/api/users \
   -H 'Content-Type: application/json' \
-  -d '{"email":"ada@example.com","firstName":"Ada","lastName":"Lovelace"}' | jq
+  -d '{"email":"ada@example.com","firstName":"Ada","lastName":"Lovelace"}'
 
 docker compose logs -f notification-service audit-service
-make down           # stoppe + supprime les volumes
+
+docker compose down -v        # stoppe + supprime les volumes
 ```
 
 ---
 
 ## Option B — Kubernetes local sur kind
 
-Guide détaillé (accès services, base de données, Kafka, publication de messages,
-dépannage) : **[`k8s/README.md`](k8s/README.md)**.
+Déploiement **manuel pas à pas** entièrement documenté dans
+**[`k8s/README.md`](k8s/README.md)** : création du cluster, `kubectl apply -k k8s`,
+attente des rollouts, accès aux services, base de données, commandes Kafka,
+5 exemples de publication de message, migrations, redéploiement, nettoyage,
+dépannage.
 
-Prérequis : `docker`, `kind`, `kubectl`.
+Résumé :
 
 ```bash
-make kind-up        # crée le cluster "user-platform" (ports 8080 + 8025 mappés)
-make deploy         # build images -> kind load -> kubectl apply -k k8s
-make k8s-status
+kind create cluster --config kind-config.yaml
+kubectl apply -k k8s
+kubectl -n user-platform wait --for=condition=available --timeout=300s deployment --all
 
-# API      : http://localhost:8080
-# Kafka UI : http://localhost:8090   (NodePort 30808)
-# MailHog  : http://localhost:8025
+# API      : http://localhost:8080        (NodePort 30080)
+# Kafka UI : http://localhost:8090        (NodePort 30808)
+# MailHog  : http://localhost:8025        (NodePort 30825)
 
 curl -s -X POST http://localhost:8080/api/users \
   -H 'Content-Type: application/json' \
-  -d '{"email":"grace@example.com","firstName":"Grace","lastName":"Hopper"}' | jq
+  -d '{"email":"grace@example.com","firstName":"Grace","lastName":"Hopper"}'
 
 kubectl -n user-platform logs -l app=notification-service -f
 kubectl -n user-platform logs -l app=audit-service -f
 
-make undeploy       # supprime les ressources k8s
-make kind-down      # supprime le cluster
+kubectl delete -k k8s
+kind delete cluster --name user-platform
 ```
 
-Les migrations Doctrine tournent dans un `initContainer` du Deployment
-`user-service` avant chaque démarrage du pod.
-
-**Kafka UI** : `http://localhost:8090` (topics, messages, groupes consumers, lag).
-Si le cluster kind a été créé avant l'ajout du mapping de port, utiliser :
-
-```bash
-kubectl -n user-platform port-forward svc/kafka-ui 8090:8080
-```
-
-### Manifestes (`k8s/`)
-
-`00-namespace` · `05-config` (ConfigMap + Secret) · `10-postgres`
-(Deployment + Service + PVC) · `20-kafka` · `30-mailhog` · `40-user-service`
-(Deployment + initContainer migrations + Service NodePort 30080) ·
-`50-notification-service` · `60-audit-service` · `kustomization.yaml`.
-
----
-
-## Publier les images sur un registry
-
-`make push` construit puis pousse **php-api-user**, **postgresql-user**,
-**kafka-user** vers `$REGISTRY` :
-
-```bash
-make push REGISTRY=docker.io/mon-compte
-# ou : ghcr.io/mon-org, registry.gitlab.com/mon-groupe/mon-projet, localhost:5000 ...
-
-make push-all REGISTRY=docker.io/mon-compte   # pousse aussi les 2 consommateurs
-```
-
-Prérequis : `docker login <registry>` fait au préalable.
-Écraser le tag : `make push REGISTRY=... TAG=v1`.
+Aucun build ni `kind load` : le cluster tire les images `ahceneaiti/*:latest`
+depuis Docker Hub (`imagePullPolicy: Always`). Les migrations Doctrine tournent
+dans un `initContainer` du Deployment `user-service`.
 
 ---
 
@@ -145,6 +124,9 @@ Prérequis : `docker login <registry>` fait au préalable.
   ```
 - **Limite connue** : publication en double écriture (DB puis Kafka) sans
   transaction outbox — suffisant pour une démo locale, à durcir en prod.
-- `composer.lock` n'est pas fourni ; le build Docker fait `composer install`
-  puis `composer update` en secours. Pour figer : lancer `composer install`
-  dans chaque service et committer les `composer.lock`.
+- `composer.lock` n'est pas commité ; le build Docker résout les dépendances
+  avec `--no-security-blocking` (l'environnement de build bloque à tort toutes
+  les versions Symfony). Pour figer : `composer install` dans chaque service
+  puis committer les `composer.lock`.
+- **Images** : publiées sur `docker.io/ahceneaiti/*`. Rebuild/repush manuel :
+  `docker build -t ahceneaiti/<nom>:latest ./<service> && docker push ahceneaiti/<nom>:latest`.

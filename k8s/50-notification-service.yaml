@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: notification-service
-          image: notification-service:local
-          imagePullPolicy: IfNotPresent
+          image: ahceneaiti/notification-service:latest
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: app-config

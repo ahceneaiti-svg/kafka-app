@@ -19,8 +19,8 @@ spec:
     spec:
       containers:
         - name: kafka
-          image: kafka-user:local
-          imagePullPolicy: IfNotPresent
+          image: ahceneaiti/kafka-user:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 9092
               name: broker
