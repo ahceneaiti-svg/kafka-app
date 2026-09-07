@@ -1,0 +1,14 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: user-platform
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # user-service NodePort -> http://localhost:8080
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      # MailHog UI NodePort -> http://localhost:8025
+      - containerPort: 30825
+        hostPort: 8025
+        protocol: TCP

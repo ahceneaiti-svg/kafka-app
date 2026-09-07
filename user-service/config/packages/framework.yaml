@@ -1,0 +1,11 @@
+framework:
+    secret: '%env(APP_SECRET)%'
+    http_method_override: false
+    handle_all_throwables: true
+    session: false
+    php_errors:
+        log: true
+    validation:
+        enabled: true
+    router:
+        utf8: true

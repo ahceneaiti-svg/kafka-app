@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+#
+# kafka-user: single-node Kafka (KRaft mode, no ZooKeeper) with the
+# user-platform listener config baked in. Plaintext only - local use.
+# Based on the official Apache image (storage is auto-formatted on boot).
+
+FROM apache/kafka:3.8.0
+
+ENV KAFKA_NODE_ID=1 \
+    KAFKA_PROCESS_ROLES=broker,controller \
+    KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+    KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092 \
+    KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+    KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+    KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+    KAFKA_NUM_PARTITIONS=3 \
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
+    KAFKA_LOG_DIRS=/var/lib/kafka/data
+
+EXPOSE 9092 9093

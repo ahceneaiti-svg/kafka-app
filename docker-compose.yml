@@ -1,0 +1,97 @@
+name: user-platform
+
+services:
+  postgres:
+    build: ./postgres
+    image: postgresql-user:local
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    build: ./kafka
+    image: kafka-user:local
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  user-service:
+    build: ./user-service
+    image: php-api-user:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "0"
+      APP_SECRET: local-dev-not-secret
+      DATABASE_URL: "postgresql://app:app@postgres:5432/app?serverVersion=16&charset=utf8"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPIC: "user-events"
+      MAILER_DSN: "smtp://mailhog:1025"
+    ports:
+      - "8080:8000"
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - >
+        php bin/console doctrine:migrations:migrate --no-interaction --all-or-nothing &&
+        exec php -d variables_order=EGPCS -S 0.0.0.0:8000 -t public public/index.php
+
+  notification-service:
+    build: ./notification-service
+    image: notification-service:local
+    depends_on:
+      kafka:
+        condition: service_started
+      mailhog:
+        condition: service_started
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "0"
+      APP_SECRET: local-dev-not-secret
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPIC: "user-events"
+      KAFKA_CONSUMER_GROUP: "notification-service"
+      MAILER_DSN: "smtp://mailhog:1025"
+      MAILER_FROM: "no-reply@user-platform.local"
+    restart: unless-stopped
+
+  audit-service:
+    build: ./audit-service
+    image: audit-service:local
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "0"
+      APP_SECRET: local-dev-not-secret
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPIC: "user-events"
+      KAFKA_CONSUMER_GROUP: "audit-service"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  kafkadata:
