@@ -69,6 +69,9 @@ make down           # stoppe + supprime les volumes
 
 ## Option B — Kubernetes local sur kind
 
+Guide détaillé (accès services, base de données, Kafka, publication de messages,
+dépannage) : **[`k8s/README.md`](k8s/README.md)**.
+
 Prérequis : `docker`, `kind`, `kubectl`.
 
 ```bash
