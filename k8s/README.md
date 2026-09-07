@@ -186,6 +186,21 @@ kubectl -n user-platform logs -l app=audit-service -f
 
 ### Cluster créé sans les mappings de port (cluster préexistant)
 
+Script fourni : **`k8s/port-forward.sh`** ouvre les 3 tunnels d'un coup et les
+ferme proprement au `Ctrl-C`.
+
+```bash
+./k8s/port-forward.sh
+#   user-service   -> http://localhost:8080
+#   kafka-ui       -> http://localhost:8090
+#   mailhog-ui     -> http://localhost:8025
+#   Ctrl-C pour tout arrêter.
+```
+
+Namespace surchargeable : `NAMESPACE=autre ./k8s/port-forward.sh`.
+
+Équivalent manuel (un terminal par commande) :
+
 ```bash
 kubectl -n user-platform port-forward svc/user-service 8080:80
 kubectl -n user-platform port-forward svc/kafka-ui     8090:8080
