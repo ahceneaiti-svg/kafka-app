@@ -8,6 +8,7 @@ resources:
   - 05-config.yaml
   - 10-postgres.yaml
   - 20-kafka.yaml
+  - 25-kafka-ui.yaml
   - 30-mailhog.yaml
   - 40-user-service.yaml
   - 50-notification-service.yaml

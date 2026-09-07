@@ -32,6 +32,18 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      KAFKA_CLUSTERS_0_NAME: user-platform
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
+      DYNAMIC_CONFIG_ENABLED: "true"
+    ports:
+      - "8090:8080"
+
   user-service:
     build: ./user-service
     image: php-api-user:local

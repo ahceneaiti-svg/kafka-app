@@ -29,6 +29,7 @@ tombe rejoue le message (commit manuel après traitement réussi).
 | `notification-service` | Consommateur → mail de bienvenue                 | `notification-service`   |
 | `audit-service`        | Consommateur → journal d'audit                   | `audit-service`          |
 | `mailhog`              | SMTP de test + UI web                            | `mailhog/mailhog`        |
+| `kafka-ui`             | Interface web pour inspecter topics / messages   | `kafbat/kafka-ui`        |
 
 ## API
 
@@ -52,8 +53,9 @@ Corps de `POST /api/users` :
 
 ```bash
 make up            # build + démarre tout
-# API    : http://localhost:8080
-# MailHog: http://localhost:8025
+# API      : http://localhost:8080
+# Kafka UI : http://localhost:8090
+# MailHog  : http://localhost:8025
 
 curl -s -X POST http://localhost:8080/api/users \
   -H 'Content-Type: application/json' \
@@ -74,8 +76,9 @@ make kind-up        # crée le cluster "user-platform" (ports 8080 + 8025 mappé
 make deploy         # build images -> kind load -> kubectl apply -k k8s
 make k8s-status
 
-# API    : http://localhost:8080
-# MailHog: http://localhost:8025
+# API      : http://localhost:8080
+# Kafka UI : http://localhost:8090   (NodePort 30808)
+# MailHog  : http://localhost:8025
 
 curl -s -X POST http://localhost:8080/api/users \
   -H 'Content-Type: application/json' \
@@ -90,6 +93,13 @@ make kind-down      # supprime le cluster
 
 Les migrations Doctrine tournent dans un `initContainer` du Deployment
 `user-service` avant chaque démarrage du pod.
+
+**Kafka UI** : `http://localhost:8090` (topics, messages, groupes consumers, lag).
+Si le cluster kind a été créé avant l'ajout du mapping de port, utiliser :
+
+```bash
+kubectl -n user-platform port-forward svc/kafka-ui 8090:8080
+```
 
 ### Manifestes (`k8s/`)
 

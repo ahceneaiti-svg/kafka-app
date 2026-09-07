@@ -12,3 +12,7 @@ nodes:
       - containerPort: 30825
         hostPort: 8025
         protocol: TCP
+      # Kafka UI NodePort -> http://localhost:8090
+      - containerPort: 30808
+        hostPort: 8090
+        protocol: TCP
